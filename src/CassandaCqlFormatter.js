@@ -1,8 +1,13 @@
+
+
 const { SqlFormatter, ObjectNameValidator, QueryEntity } = require('@themost/query');
 
 const TRIM_QUALIFIED_NAME_REGEXP = /^(\w+)((\.(\w+))+)/;
 const TRIM_SAME_ALIAS_REGEXP = /^(.*)\sAS\s(.*)$/;
 
+const escapeSingleQuotes = /'/g;
+const escapeDoubleQuotes = /([^\\])"/g;
+const removeEscapedDoubleQuotes = /\\"/g;
 
 const CqlDialectTypes = [
   ['Boolean', 'BOOLEAN'],
@@ -31,7 +36,7 @@ const CqlDialectTypes = [
 class CassandraCqlFormatter extends SqlFormatter {
   constructor() {
     super({
-        nameFormat: '$1',
+        nameFormat: '"$1"',
         forceAlias: false
     });
   }
@@ -95,22 +100,34 @@ escapeEntity(name) {
     const cqlType = CqlDialectTypes.find((item) => item[0] === type);
     if (cqlType) {
         const sizeExpr = /\(\?\)/g;
+        let resultType = cqlType[1];
         let matches = sizeExpr.exec(cqlType[1]);
         if (matches) {
-            return size > 0 ? cqlType[1].replace(sizeExpr, `(${size})`) : cqlType[1].replace(sizeExpr, '');
+            resultType = size > 0 ? cqlType[1].replace(sizeExpr, `(${size})`) : cqlType[1].replace(sizeExpr, '')
         }
         const sizeAndScaleExpr = /\(\?,\?\)/g;
         matches = sizeAndScaleExpr.exec(cqlType[1]);
         if (matches) {
             return size > 0 && scale >= 0 ? cqlType[1].replace(sizeAndScaleExpr, `(${size},${scale})`) : cqlType[1].replace(sizeAndScaleExpr, '');
         }
+        if (field.many) {
+          return `LIST<${resultType}>`;
+        }
+        return resultType;
     }
     throw new Error(`Type ${type} is not supported by Cassandra CQL Fromatter.`);
   }
-  
 
+  stringify(value, replacer, space) {
+    const str = JSON.stringify(value, replacer, space);
+    return str.replace(escapeSingleQuotes, '\\\'')
+    .replace(escapeDoubleQuotes, '$1\'')
+    .replace(removeEscapedDoubleQuotes, '"');
+  }
+  
 }
 
 export {
+    CqlDialectTypes,
     CassandraCqlFormatter
 }
